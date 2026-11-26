@@ -1,0 +1,50 @@
+# Initial relaxation of an amorphous structure.
+# Requires a LAMMPS build with e3gnn and a compatible deployed model.
+# Example for atom types 1 = Li, 2 = P, 3 = S:
+# lmp -in in.initial_relaxation -var structure initial.data -var model deployed_serial_0.pt -var element1 Li -var element2 P -var element3 S
+# Supply the three elements in the order of the numeric atom types in the data file.
+
+# Initialization
+units           metal
+atom_style      atomic
+boundary        p p p
+timestep        0.002  # ps (2 fs)
+read_data       ${structure}
+
+pair_style      e3gnn
+pair_coeff      * * ${model} ${element1} ${element2} ${element3}
+
+variable        Tamb equal 300.0    # K
+variable        Ttar equal 800.0    # K
+variable        Pamb equal 1.01325  # bar (1 atm)
+variable        Ptar equal 3000     # bar (300 MPa)
+
+velocity        all create ${Tamb} 142857 mom yes rot yes dist gaussian
+minimize        1e-8 1e-4 1000 100000
+
+# NPT heating and compression (200 ps)
+fix             heat all npt temp ${Tamb} ${Ttar} 0.1 iso ${Pamb} ${Ptar} 2
+thermo          5000
+dump            my_movie all custom 1000 movie_npt.data id type x y z
+run             100000
+unfix           heat
+minimize        1e-8 1e-4 1000 100000
+write_data      OUT_npt1.data
+
+# NPT cooling and decompression (200 ps)
+fix             cool all npt temp ${Ttar} ${Tamb} 0.1 iso ${Ptar} ${Pamb} 2
+thermo          5000
+dump            my_movie2 all custom 1000 movie_npt2.data id type x y z
+run             100000
+unfix           cool
+minimize        1e-8 1e-4 1000 100000
+write_data      OUT_npt2.data
+
+# NVT equilibration (100 ps)
+fix             eq all nvt temp ${Tamb} ${Tamb} 0.1
+thermo          1000
+dump            movie_nvt all custom 1000 movie_RDF.dat id type x y z
+run             50000
+unfix           eq
+minimize        1e-8 1e-4 1000 100000
+write_data      OUT_nvt.data
